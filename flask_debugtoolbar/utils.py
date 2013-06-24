@@ -54,3 +54,6 @@ def format_sql(query, args):
         SqlLexer(encoding='utf-8'),
         HtmlFormatter(encoding='utf-8', noclasses=True, style=PYGMENT_STYLE))
 
+def is_rendering(stack):
+  """ Returns True if the given stack is in a rendering state. """
+  return any( level.startswith("<flask/templating.py") or level.endswith("(_render)>") for level in stack )

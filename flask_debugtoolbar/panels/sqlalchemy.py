@@ -10,7 +10,7 @@ else:
 from flask import request, current_app, abort, json_available, g
 from flask_debugtoolbar import module
 from flask_debugtoolbar.panels import DebugPanel
-from flask_debugtoolbar.utils import format_fname, format_sql
+from flask_debugtoolbar.utils import format_fname, format_sql, is_rendering
 import itsdangerous
 
 
@@ -93,15 +93,50 @@ class SQLAlchemyDebugPanel(DebugPanel):
 
         queries = get_debug_queries()
         data = []
+
+        unique_queries = {}
+
         for query in queries:
-            data.append({
+
+            formatted_stack = [ format_fname(level) for level in query.stacktrace ]
+            full_sql = query.statement % query.parameters
+            current = {
+                'query_nr': len(data) + 1,
                 'duration': query.duration,
                 'sql': format_sql(query.statement, query.parameters),
                 'signed_query': dump_query(query.statement, query.parameters),
                 'context_long': query.context,
-                'context': format_fname(query.context)
-            })
-        return self.render('panels/sqlalchemy.html', { 'queries': data})
+                'stack': formatted_stack,
+                'shortened_stack': [ level for level in formatted_stack if not level.startswith("<") ],
+            }
+
+            data.append(current)
+
+            if full_sql not in unique_queries:
+              unique_queries[full_sql] = []
+            unique_queries[full_sql].append(current['query_nr'])
+
+        repeated_queries = []
+        avoidable_query_time = 0
+
+        for uq in unique_queries:
+          query_nrs = unique_queries[uq]
+          if len(query_nrs) > 1:
+            avg_duration = sum( data[query_nr - 1]['duration'] for query_nr in query_nrs ) / len( query_nrs )
+            avoidable_query_time += avg_duration * ( len(query_nrs) - 1 )
+            repeated_queries.append(query_nrs)
+
+        context = {
+          'queries':                  data,
+          'total_sql_time':           sum(q.duration for q in queries),
+          'sql_time_while_rendering': sum( q['duration'] for q in data if is_rendering( q['stack'] ) ),
+          'repeated_queries':         repeated_queries,
+          'avoidable_queries_count':  sum( len(query_nrs) - 1 for query_nrs in repeated_queries ),
+          'avoidable_query_time':     avoidable_query_time,
+          'queries_by_duration':      [ d['query_nr'] for d in sorted(data, key=lambda x: x['duration'], reverse=True) ]
+        }
+
+        return self.render('panels/sqlalchemy.html', context)
 
 # Panel views
 

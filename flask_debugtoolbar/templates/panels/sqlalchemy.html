@@ -1,6 +1,7 @@
 <table>
 	<thead>
 		<tr>
+            <th>#</th>
 			<th>&nbsp;(ms)</th>
 			<th>Action</th>
 			<th>Context</th>
@@ -8,9 +9,18 @@
 		</tr>
 	</thead>
 	<tbody>
+        <p style="margin-top: 20px; font-size: 14px;">There were {{ queries|length }} query executions in a total of {{ '%.4f'|format(total_sql_time) }} seconds.
+          {{ '%.1f'|format( (sql_time_while_rendering/total_sql_time) * 100 ) }}% of that time occurs in the rendering phase.</p>
+        {% if avoidable_queries_count > 0 %}
+        <p style="font-size: 14px;">Some queries were executed more than once. {{ avoidable_queries_count }} executions could be avoided, representing a
+          {{ '%.1f'|format( (avoidable_query_time/total_sql_time) * 100 ) }}% of the total SQL time.</p>
+        <p style="margin-top: 4px;"><strong>Repeated query groups</strong>: {{ repeated_queries|join(', ') }}.</p>
+        {% endif %}
+        <p style="margin-top: 4px;"><strong>Queries by duration</strong>: {{ queries_by_duration|join(', ') }}.</p>
 		{% for query in queries %}
 			<tr class="{{ loop.cycle('flDebugOdd', 'flDebugEven') }}">
-				<td>{{ '%.4f'|format(query.duration * 1000) }}</td>
+                <td>{{ loop.index }}</td>
+				<td>{{ '%.1f'|format(query.duration * 1000) }}</td>
 				<td>
 				{% if query.signed_query %}
 					<a class="remoteCall" href="/_debug_toolbar/views/sqlalchemy/sql_select?query={{ query.signed_query }}&amp;duration={{ query.duration|urlencode }}">SELECT</a><br />
@@ -18,7 +28,9 @@
 				{% endif %}
 				</td>
 				<td title="{{ query.context_long }}">
-                    {{ query.context }}
+                    {% for level in query.shortened_stack %}
+                      {{ level }}<br>
+                    {% endfor %}
 				</td>
 				<td class="syntax">
 					<div class="flDebugSqlWrap">
