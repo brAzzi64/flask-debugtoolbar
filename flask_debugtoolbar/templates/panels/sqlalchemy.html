@@ -1,4 +1,4 @@
-<table>
+<table class="tablesorter">
 	<thead>
 		<tr>
             <th>#</th>
@@ -16,7 +16,6 @@
           {{ '%.1f'|format( (avoidable_query_time/total_sql_time) * 100 ) }}% of the total SQL time.</p>
         <p style="margin-top: 4px;"><strong>Repeated query groups</strong>: {{ repeated_queries|join(', ') }}.</p>
         {% endif %}
-        <p style="margin-top: 4px;"><strong>Queries by duration</strong>: {{ queries_by_duration|join(', ') }}.</p>
 		{% for query in queries %}
 			<tr class="{{ loop.cycle('flDebugOdd', 'flDebugEven') }}">
                 <td>{{ loop.index }}</td>
@@ -34,7 +33,8 @@
 				</td>
 				<td class="syntax">
 					<div class="flDebugSqlWrap">
-						<div class="flDebugSql">{{ query.sql|safe }}</div>
+						<!--<div class="flDebugSql">{#{ query.sql|safe }#}</div>-->
+                        <div class="flDebugSql">{{ query.full_sql|safe }}</div>
                         {#
 						{% if query.stacktrace %}
 						<div class="djSQLHideStacktraceDiv" style="display:none;">
