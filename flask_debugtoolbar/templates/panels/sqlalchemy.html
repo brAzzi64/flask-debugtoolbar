@@ -1,40 +1,28 @@
+<ul style="margin-top: 20px; font-size: 14px;">
+  <li>Total query executions: {{ total_executions_count }} ({{ queries|length }} unique)
+  <li>Total time: {{ '%.3f'|format(total_sql_time) }} seconds ({{ '%.1f'|format( (sql_time_while_rendering/total_sql_time) * 100 ) }}% on rendering phase)</li>
+</ul>
 <table class="tablesorter">
 	<thead>
 		<tr>
-            <th>#</th>
-			<th>&nbsp;(ms)</th>
+            <th>Query&nbsp;#</th>
+          	<th>Executions</th>
+			<th>Total&nbsp;Time&nbsp;(ms)</th>
 			<th>Action</th>
-			<th>Context</th>
+			<!--<th>Context&nbsp;(1st&nbsp;exec)</th>-->
 			<th>Query</th>
 		</tr>
 	</thead>
 	<tbody>
-        <p style="margin-top: 20px; font-size: 14px;">There were {{ queries|length }} query executions in a total of {{ '%.4f'|format(total_sql_time) }} seconds.
-          {{ '%.1f'|format( (sql_time_while_rendering/total_sql_time) * 100 ) }}% of that time occurs in the rendering phase.</p>
-        {% if avoidable_queries_count > 0 %}
-        <p style="font-size: 14px;">Some queries were executed more than once. {{ avoidable_queries_count }} executions could be avoided, representing a
-          {{ '%.1f'|format( (avoidable_query_time/total_sql_time) * 100 ) }}% of the total SQL time.</p>
-        <p style="margin-top: 4px;"><strong>Repeated query groups</strong>: {{ repeated_queries|join(', ') }}.</p>
-        {% endif %}
 		{% for query in queries %}
 			<tr class="{{ loop.cycle('flDebugOdd', 'flDebugEven') }}">
-                <td>{{ loop.index }}</td>
-				<td>{{ '%.1f'|format(query.duration * 1000) }}</td>
-				<td>
-				{% if query.signed_query %}
-					<a class="remoteCall" href="/_debug_toolbar/views/sqlalchemy/sql_select?query={{ query.signed_query }}&amp;duration={{ query.duration|urlencode }}">SELECT</a><br />
-					<a class="remoteCall" href="/_debug_toolbar/views/sqlalchemy/sql_explain?query={{ query.signed_query }}&amp;duration={{ query.duration|urlencode }}">EXPLAIN</a><br />
-				{% endif %}
-				</td>
-				<td title="{{ query.context_long }}">
-                    {% for level in query.shortened_stack %}
-                      {{ level }}<br>
-                    {% endfor %}
-				</td>
+                <td>{{ query.query_id }}</td>
+                <td>{{ query.executions|length }}</td>
+				<td>{{ '%.1f'|format(query.total_duration * 1000) }}</td>
+				<td><a class="remoteCall" href="/_debug_toolbar/views/sqlalchemy/sql_query_executions?key={{ key }}&amp;query_id={{ query.query_id }}">VIEW EXECUTIONS</a></td>
 				<td class="syntax">
 					<div class="flDebugSqlWrap">
-						<!--<div class="flDebugSql">{#{ query.sql|safe }#}</div>-->
-                        <div class="flDebugSql">{{ query.full_sql|safe }}</div>
+                        <div class="flDebugSql">{{ query.sql|safe }}</div>
                         {#
 						{% if query.stacktrace %}
 						<div class="djSQLHideStacktraceDiv" style="display:none;">

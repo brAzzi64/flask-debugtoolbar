@@ -7,11 +7,14 @@ except ImportError:
 else:
     sqlalchemy_available = True
 
+from collections import namedtuple, deque
 from flask import request, current_app, abort, json_available, g
 from flask_debugtoolbar import module
 from flask_debugtoolbar.panels import DebugPanel
 from flask_debugtoolbar.utils import format_fname, format_sql, is_rendering
+import itertools
 import itsdangerous
+import uuid
 
 
 _ = lambda x: x
@@ -51,6 +54,19 @@ class SQLAlchemyDebugPanel(DebugPanel):
     """
     name = 'SQLAlchemy'
 
+    # save the context for the 5 most recent requests
+    query_cache = deque(maxlen=5)
+
+    @classmethod
+    def get_cache_for_key(self, key):
+        for cache_key, value in self.query_cache:
+            if key == cache_key:
+                return value
+        raise KeyError(key)
+
+    def __init__(self, *args, **kwargs):
+        super(self.__class__, self).__init__(*args, **kwargs)
+        self.key = str(uuid.uuid4())
 
     @property
     def has_content(self):
@@ -92,48 +108,53 @@ class SQLAlchemyDebugPanel(DebugPanel):
             return '\n'.join(msg)
 
         queries = get_debug_queries()
-        data = []
 
         unique_queries = {}
 
-        for query in queries:
+        for i, query in enumerate(queries):
+
+            try:
+                query_data = unique_queries[query.statement]
+            except KeyError:
+                query_data = {
+                  'query_id': len(unique_queries) + 1,
+                  'total_duration': 0,
+                  'executions': []
+                }
+                unique_queries[query.statement] = query_data
 
             formatted_stack = [ format_fname(level) for level in query.stacktrace ]
-            full_sql = query.statement % query.parameters
-            current = {
-                'query_nr': len(data) + 1,
+
+            query_exec = {
+                'exec_nr': i + 1,
                 'duration': query.duration,
-                'sql': format_sql(query.statement, query.parameters),
-                'signed_query': dump_query(query.statement, query.parameters),
+                'parameters': query.parameters,
                 'context_long': query.context,
                 'stack': formatted_stack,
                 'shortened_stack': [ level for level in formatted_stack if not level.startswith("<") ],
+                'signed_query': dump_query(query.statement, query.parameters)
             }
 
-            data.append(current)
+            query_data['total_duration'] += query.duration
+            query_data['sql'] = format_sql(query.statement, query.parameters)
+            query_data['executions'].append(query_exec)
 
-            if full_sql not in unique_queries:
-              unique_queries[full_sql] = []
-            unique_queries[full_sql].append(current['query_nr'])
+        # keep only the actual query info, indexed by our id
+        data = dict((query_data['query_id'], query_data) for (statement, query_data) in unique_queries.iteritems())
 
-        repeated_queries = []
-        avoidable_query_time = 0
+        # store the info about this queries
+        self.query_cache.append((self.key, data))
 
-        for uq in unique_queries:
-          query_nrs = unique_queries[uq]
-          if len(query_nrs) > 1:
-            avg_duration = sum( data[query_nr - 1]['duration'] for query_nr in query_nrs ) / len( query_nrs )
-            avoidable_query_time += avg_duration * ( len(query_nrs) - 1 )
-            repeated_queries.append(query_nrs)
-
+        # total rendering time
+        sql_time_while_rendering = sum( execution['duration'] for execution in \
+                                        itertools.chain(*[ query['executions'] for query in data.itervalues() ]) \
+                                        if is_rendering(execution['stack']) )
         context = {
-          'queries':                  data,
+          'key':                      self.key,
+          'queries':                  data.values(),
           'total_sql_time':           sum(q.duration for q in queries),
-          'sql_time_while_rendering': sum( q['duration'] for q in data if is_rendering( q['stack'] ) ),
-          'repeated_queries':         repeated_queries,
-          'avoidable_queries_count':  sum( len(query_nrs) - 1 for query_nrs in repeated_queries ),
-          'avoidable_query_time':     avoidable_query_time,
-          'queries_by_duration':      [ d['query_nr'] for d in sorted(data, key=lambda x: x['duration'], reverse=True) ]
+          'sql_time_while_rendering': sql_time_while_rendering,
+          'total_executions_count':   sum(len(query['executions']) for query in data.itervalues())
         }
 
         return self.render('panels/sqlalchemy.html', context)
@@ -150,7 +171,7 @@ def sql_select():
         'result': result.fetchall(),
         'headers': result.keys(),
         'sql': format_sql(statement, params),
-        'duration': float(request.args['duration']),
+        'duration': float(request.args['duration'] or 0),
     })
 
 @module.route('/sqlalchemy/sql_explain', methods=['GET', 'POST'])
@@ -168,5 +189,12 @@ def sql_explain():
         'result': result.fetchall(),
         'headers': result.keys(),
         'sql': format_sql(statement, params),
-        'duration': float(request.args['duration']),
+        'duration': float(request.args['duration'] or 0),
+    })
+
+@module.route('/sqlalchemy/sql_query_executions', methods=['GET', 'POST'])
+def sql_query_executions():
+    data = SQLAlchemyDebugPanel.get_cache_for_key(request.args['key'])
+    return g.debug_toolbar.render('panels/sqlalchemy_query_executions.html', {
+        'query_data': data[int(request.args['query_id'])],
     })
